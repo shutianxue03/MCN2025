@@ -3,8 +3,8 @@ N=50; % number of nodes in the input layer (x)
 M=10; % number of nodes in the output layer (y)
 
 % Create a weight matrix W with random values
-W = rand(M, N);
-
+W = rand(M, N); % testing
+%
 % Define the input vector x
 x = randn(N, 1); % input vector with N random values
 
