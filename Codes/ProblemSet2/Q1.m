@@ -1,3 +1,6 @@
+clear all
+clc
+close all
 %% 1.3 (ii)
 % Plot s head as a function of x
 x_all = linspace(-10, 10, 100);

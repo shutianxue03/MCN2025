@@ -7,34 +7,52 @@
 %  r2: firing rate of the second neuron population
 %  t: time vector
 
-clc, clear all, close all
+clear all
+clc
+close all
+
 %% (e)
 I1=63; % input current to the first neuron population. in Hz
 I2=57; % input current to the second neuron population. in Hz
 I = [I1, I2]';
 
-% Both neurons reach stable states
-%   when both eigenvalues of W are < 1 (does not have to be positive!)
-w_self = .2; % self-connection weight
-w_other = -.7; % connection weight between the two populations
+state = 'stable'; 
+% state = 'winner-take-all';
+% state = 'winner-take-too-much';
 
-% Winner-take-all network (still stable)
-%   when w_other is very negative (hence the mutual inhibition is strong)
-%  and both eigenvalues of W are still < 1, so that both neurons reach stable states
-% w_self = .2; % self-connection weight
-% w_other = -10; % for Q2g: if w_other is a large negative value
+% Add adaptation and noise to the dynamics to allow state switch
+sigmaNoise = 10; % add gaussian noise to the dynamics (for answering g(ii))
+adapt_strength = 10; % add adaptation to the dynamics (for answering g(ii))
+tau_adapt = 500; % adaptation time constant in ms
 
-% % Winner-take-too-much network (unstable, runaway growth)
-% %   when lambda1 or lambda_common> 1, ie. w_self + w_other > 1, both neurons will grow exponentially
-% %   when lambda2 or lambda_diff > 1, ie. w_self - w_other > 1, one neuron will grow exponentially
-% w_self = .3; % self-connection weight
-% w_other = -1.2; % for Q2g: if w_other is a large negative value
-
+switch state
+    case 'stable'
+        fprintf('State: Stable\n');
+        % Both neurons reach stable states
+        %   when both eigenvalues of W are < 1 (does not have to be positive!)
+        w_self = .2; % self-connection weight
+        w_other = -.7; % connection weight between the two populations
+    case 'winner-take-all'
+        fprintf('State: Winner-take-all\n');
+        %   when w_other is very negative (hence the mutual inhibition is strong)
+        %  and when both eigenvalues of W are still < 1, so that both neurons reach stable states
+        w_self = .2; % self-connection weight
+        w_other = -10; % for Q2g: if w_other is a large negative value
+    case 'winner-take-too-much'
+        fprintf('State: Winner-take-too-much\n');
+        % unstable, runaway growth
+        %   when lambda1 or lambda_common> 1, ie. w_self + w_other > 1, both neurons will grow exponentially
+        %   when lambda2 or lambda_diff > 1, ie. w_self - w_other > 1, one neuron will grow exponentially
+        w_self = .1; % self-connection weight
+        w_other = -1.2; % for Q2g: if w_other is a large negative value
+    otherwise
+        error('Unknown state: %s', state);
+end
 
 W = [w_self, w_other; w_other, w_self]; % connectivity matrix
 tau_bio = 18; % time constant for both populations, in ms
 dt = 1; % time step in ms
-T = 1000; % total time in ms
+T = 500; % total time in ms
 t_all = 0:dt:T; % time vector in ms
 r_max = 100; % maximum firing rate in Hz
 
@@ -74,14 +92,15 @@ fprintf('\n\n(e-2) Resting firing rates: r1 = %.2f Hz, r2 = %.2f Hz\n', r_inf(1)
 %% f: simulate the network by numerically solving the equations
 % Set initial firing rates
 nRand = 3; % Number of random initial conditions
-% r_init_all = [round(rand(nRand, 2)*100); [0,0]; I']; % Initial conditions including zero and random values
-r_init_all = [10, 5; 10,10; 10,15; 10,20; 10,30; 10,50]
+r_init_all = [round(rand(nRand, 2)*100); [0,0]; I']; % Initial conditions including zero and random values
+r_init_all = [I']; % Initial conditions including zero and random values
+% r_init_all = [10, 5; 10,10; 10,15; 10,20; 10,30; 10,50]
 
 nInitial = size(r_init_all, 1);
 
 figure('Position', [100, 100, 1200, 500]);
 
-subplot(1,2,1), hold on; 
+subplot(1,2,1), hold on;
 % plot r_max
 yline(r_max, 'k--', 'LineWidth', 1, 'DisplayName', 'r_{max}', 'HandleVisibility', 'off');
 xlabel('Time (ms)');
@@ -90,7 +109,7 @@ xlim([-5 T]);
 ylim([0 100]);
 title(sprintf('Network dynamics from different initial conditions\nSolid: r1, Dashed: r2'));
 
-subplot(1,2,2), hold on; 
+subplot(1,2,2), hold on;
 % plot eigenvectors and their directions
 plot([0, 100], [0, 100], 'k--', 'LineWidth', 1, 'DisplayName', sprintf('Eigenvector 1 [%d, %d]', eigenvector1));
 plot([0, 100], [100, 0], 'k--', 'LineWidth', 1, 'DisplayName', sprintf('Eigenvector 2 [%d, %d]', eigenvector2));
@@ -114,15 +133,26 @@ sgtitle(sprintf('Network Dynamics and Phase Plane Analysis\nw_{self} = %.2f, w_{
 
 for iInitial = 1:nInitial
 
-    r0 = r_init_all(iInitial, :)'; % Initial firing rate
+    % preallocate arrays for firing rates and adaptation
     r_all = nan(2, length(t_all));
+    A_all = zeros(2, length(t_all)); % adaptation current
+
+    % Set initial firing rate
+    r0 = r_init_all(iInitial, :)';
     r_all(:, 1) = r0;
 
     % Simulate
     for t = 2:length(t_all)
+        % Update adaption
+        % dAdt = (-A_all(:, t-1) + adapt_strength * r_all(:, t-1)) / tau_adapt;
+        dAdt = (adapt_strength * r_all(:, t-1).^2) / tau_adapt;
+        A_all(:, t) = A_all(:, t-1) + dt * dAdt;
+
         % Calculate derivative
-        drdt = (-r_all(:, t-1) + W * r_all(:, t-1) + I) / tau_bio;
-        drdt = drdt + randn(2, 1) * 0.1; % Add some stochastic noise to the dynamics
+        drdt = (-r_all(:, t-1) + W * r_all(:, t-1) + I - A_all(:, t-1)) / tau_bio;
+        % drdt = (-r_all(:, t-1) + W * r_all(:, t-1) + I) / tau_bio;
+        drdt = drdt + randn(2, 1) * sigmaNoise; % Add some stochastic noise to the dynamics
+
         % Update firing rates
         r_all(:, t) = r_all(:, t-1) + dt * drdt;
         % Ensure firing rates do not go negative (optional constraint)
@@ -167,9 +197,13 @@ for iInitial = 1:nInitial
 end
 
 %% g: Winner-take-all networks
-% (i)  
+% (i)
 % The neurons with a weaker input will be driven to zero firing rate.
 % Runaway growth of the winner's firing rate can occur if then different mode of the eigenvalue of the weight is > 1
 
 % (ii)
-% Add stochastic noise
+% Add stochastic noise and adaptation to the dynamics
+dominant = r_all(1,:) > r_all(2,:);
+switches = sum(abs(diff(dominant)) > 0);
+fprintf("g(ii): Number of switches: %d\n", switches);
+
