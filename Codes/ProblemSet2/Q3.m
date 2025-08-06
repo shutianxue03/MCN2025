@@ -5,14 +5,14 @@ close all
 
 %% 3.1
 rule = 'BCM'; % learning rule: 'BCM' or 'Hebbian'
-rule = 'Hebbian'; % Uncomment to use Hebbian learning rule
+% rule = 'Hebbian'; % Uncomment to use Hebbian learning rule
 
 % Inputs
 x1 = [20, 0]'; % firing rate in Hz
 x2 = [0, 20]';
 
 eta = 1e-6; % learning rate, in Hz
-y0 = 10; % initial threshold in Hz
+y0 = 20; % initial threshold in Hz
 tau = 50; % time constant in ms
 
 T= 1e4; % duration in ms
