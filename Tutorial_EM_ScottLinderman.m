@@ -18,7 +18,7 @@ figure;
 histogram(x, 30, 'Normalization', 'pdf'); hold on;
 x_vals = linspace(min(x)-1, max(x)+1, 1000);
 pdf_true = true_pi(1)*normpdf(x_vals, true_mu(1), true_sigma(1)) + ...
-           true_pi(2)*normpdf(x_vals, true_mu(2), true_sigma(2));
+    true_pi(2)*normpdf(x_vals, true_mu(2), true_sigma(2));
 plot(x_vals, pdf_true, 'r--', 'LineWidth', 2);
 title('Simulated Data from 2-Component GMM');
 legend('Data Histogram','True GMM');
