@@ -31,7 +31,6 @@ b_all = randn(nNeurons,1) * 10 + b;
 b_all(1:round(0.35*nNeurons)) = 0; % Ensure baseline firing rate is non-negative
 
 %% Calculate theoretical signal correlation coefficients [Eq S13]
-
 Corr_signal = nan(nNeurons, nNeurons);
 
 for iN1 = 1:nNeurons
@@ -101,7 +100,7 @@ for iStim = 1:nStim
     resp_perStim_sim{iStim} = mvnrnd(f_theo, cov_sim, nTrials_perStim)';  % [N x T_per_s]
 
     % Calculate response covariance matrix
-    cov_resp_sim = cov(resp_perStim_sim{iStim}');
+    cov_resp_sim = cov(resp_perStim_sim{iStim}'); % need to transpose; no need to center before using cov()
 
     % Calculate Fisher information (Eq S16)
     fisher_allStim(iStim) = 1/(f_dev_theo_allStim(:, iStim).' * inv(cov_resp_sim) * f_dev_theo_allStim(:, iStim));
@@ -145,7 +144,7 @@ for iStim = 1:nStim
     cov_sim = wishrnd(cov_mean_theo,df)/df;
 
     % Simulate responses
-    resp_perStim_sim{iStim} = mvnrnd(f_theo, cov_sim, nTrials_perStim)';  % [N x T_per_s]
+    % resp_perStim_sim{iStim} = mvnrnd(f_theo, cov_sim, nTrials_perStim)';  % [N x T_per_s]
 
 
 end % for iStim

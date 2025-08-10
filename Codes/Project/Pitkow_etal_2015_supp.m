@@ -23,7 +23,7 @@ a_all     = max(0, randn(nNeurons,1)*20 + a);
 b_all     = max(0, randn(nNeurons,1)*10 + b);
 b_all(1:round(0.35*nNeurons)) = 0;
 
-% Correlation strength (S11)
+% Define correlation strength (S11)
 c0 = 0.15;  % 0.1–0.5 ( Chen et al., 2013; Liu et al., 2013).
 
 %% Signal correlation (Eq S13)
@@ -50,7 +50,7 @@ assert(max(abs(Corr_signal_(:) - Corr_signal(:))) < 1e-3, 'ALERT: Corr_signal_ i
 
 Corr_signal = Corr_signal_;  % overwrite
 
-% Obtain noise correlation matrix (R) by mixing with identity (S11)
+% Obtain noise correlation matrix (R) by mixing with identity (Eq S11)
 R = (1-c0)*eye(nNeurons) + c0*Corr_signal_;
 
 %% Containers
@@ -59,24 +59,7 @@ f_theo_allStim   = nan(nNeurons, nStim);
 fprime_allStim   = nan(nNeurons, nStim);
 
 %% Helper: build tuning curve at any stimulus level (s)
-    function [f, fp] = tuning_at(s)
-        % per-neuron von Mises centered at pref_all
-        d = s - pref_all;  % N x 1
-        switch tuningDiversity
-            case 'uniform'
-                f  = b + a .* exp( kappa    .* (cos(d) - 1) );
-                fp = -a .* kappa .* exp( kappa .* (cos(d) - 1) ) .* sin(d);
-            case 'lowDiversity'
-                f  = b + a .* exp( kappa_all .* (cos(d) - 1) );
-                fp = -a .* kappa_all .* exp( kappa_all .* (cos(d) - 1) ) .* sin(d);
-            case 'naturalDiversity'
-                f  = b_all + a_all .* exp( kappa_all .* (cos(d) - 1) );
-                fp = -a_all .* kappa_all .* exp( kappa_all .* (cos(d) - 1) ) .* sin(d);
-            otherwise
-                error('Unknown tuningDiversity');
-        end
-        f = max(f, 1e-6);  % keep strictly positive
-    end
+% see tuning_at.m
 
 %% Simulate
 df = 2*nNeurons;  % define Wishart degrees of freedom (S14)
@@ -86,14 +69,17 @@ for iStim = 1:nStim
     s = stim_all(iStim);
 
     % Derive tuning function and the derivative
-    [f_s, fp_s] = tuning_at(s);
+    [f_s, fp_s] = tuning_at(tuningDiversity, s, pref_all, a, b, kappa, a_all, b_all, kappa_all);
+    
     % Store
     f_theo_allStim(:,iStim) = f_s;
     fprime_allStim(:,iStim) = fp_s;
 
-    % Obtain mean covariance at this s (the in-text eq before Eq S14)
+    % Obtain mean covariance at this s (the in-text eq above Eq S14)
     D  = diag(sqrt(f_s));
     Sig_bar = D * R * D;
+    Sig_bar = (Sig_bar + Sig_bar')/2;
+    Sig_bar = Sig_bar + 1e-8*eye(nNeurons);
 
     % sample covariance via Wishart, then re-symmetrize
     Sig = wishrnd(Sig_bar, df) / df;
