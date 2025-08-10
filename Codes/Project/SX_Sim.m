@@ -3,14 +3,19 @@
 
 % This script generates synthetic neural data based on Pitkow et al. (2015)
 % Task: heading discrimination
-% The data contains:
+
+% Inputs (the dataset)
 %   - Stimulus: Discrete heading directions for each trial
 %   - Neural responses (firing rates) of N neurons
 %   - Behavioral choices (left/right) for each trial
 
-% Output of simulating virtual neurons: measurement error, estimated choice correlations, neural thresholds, tuning curves, and their corresponding uncertainties
-
-% The thresholds and tuning data were used to predict choice correlations according to Equations 2 and 3 separately,
+% Outputs
+%   - measurement error (var of estimator)
+%   - estimated choice correlations (CC)
+%   - neural thresholds (theta_k)
+%   - behavioral thresholds (theta)
+%   - tuning curves (f(s))
+%   - and their corresponding uncertainties (sigmas)
 
 clear all; clc;
 
@@ -18,17 +23,19 @@ clear all; clc;
 nNeurons = 100;           % population size
 nTrialsPerStim = 100;
 
-% From data
+% From Pitkow et al 2015
 % stimVals = [-6.4, -2.6, -1, 0, 1, 2.6, 6.4]/180*pi;
 % nStimVals = length(stimVals);
 
 % Manually set the stimulus values
-nStimVals = 20;
+nStimVals = 50; % number of stimulus levels
 stimVals = linspace(-pi/2, pi/2, nStimVals);
 nTrials  = nTrialsPerStim * nStimVals;          % total trials
 
-% Tuning function parameters
-c0       = 0.2;           % proportionality constant
+% proportionality constant
+c0 = 0.2; % usually 0.1-0.5
+
+% % Tuning function parameters
 kappa    = 1;             % tuning width for von Mises
 b = 0;
 a = 20;
@@ -100,7 +107,7 @@ respNeural   = nan(nNeurons, nTrials);
 df = 2*nNeurons;  % define Wishart degrees of freedom (S14)
 
 % evaluate derivative at s=0, which is the reference heading
-stim_ref = zeros(size(stimSeq(1))); 
+stim_ref = zeros(size(stimSeq(1)));
 
 for t = 1:nTrials
     stimVal = stimSeq(t);
@@ -272,11 +279,11 @@ pFA_cb = nan(size(thresholds));
 % Calculate Hit and False Alarm rates for each threshold
 for iThresh = 1:length(thresholds)
     thresh = thresholds(iThresh);
-    
+
     % For the OPTIMAL decoder
     pHit_opt(iThresh) = sum(s_hat_opt_right > thresh) / length(s_hat_opt_right);
     pFA_opt(iThresh) = sum(s_hat_opt_left > thresh) / length(s_hat_opt_left);
-    
+
     % For the CORRELATION-BLIND decoder
     pHit_cb(iThresh) = sum(s_hat_cb_right > thresh) / length(s_hat_cb_right);
     pFA_cb(iThresh) = sum(s_hat_cb_left > thresh) / length(s_hat_cb_left);
@@ -307,7 +314,7 @@ CC_cb_emp = nan(nNeurons, 1);
 for i = 1:nNeurons
     % Correlation for the optimal decoder
     CC_opt_emp(i) = corr(respNeural(i, :)', s_hat_opt');
-    
+
     % Correlation for the correlation-blind decoder
     CC_cb_emp(i) = corr(respNeural(i, :)', s_hat_cb');
 end
@@ -358,3 +365,62 @@ title('Choice Correlations (Correlation-blind)');
 % make all linewidt to be 2
 set(findall(gcf,'-property','LineWidth'),'LineWidth',2);
 
+%% 9. Calculate Trial-to-Trial Variability (Fano Factor & Behavioral)
+
+% --- NEURONAL VARIABILITY ---
+fanoFactors = nan(nNeurons, 1);
+for iN = 1:nNeurons
+    variances_per_stim = nan(nStimVals, 1);
+    means_per_stim = nan(nStimVals, 1);
+
+    for iStim = 1:nStimVals
+        stim = stimVals(iStim);
+        indTrial = stimSeq == stim;
+
+        % Get responses for this neuron for all trials of a specific stimulus
+        neuron_responses = respNeural(iN, indTrial);
+
+        variances_per_stim(iStim) = var(neuron_responses);
+        means_per_stim(iStim) = mean(neuron_responses);
+    end
+
+    % Fano Factor = mean of (variance / mean) across all stimulus conditions
+    fanoFactors(iN) = mean(variances_per_stim ./ means_per_stim, 'omitnan');
+end
+
+% Visualize the Fano Factors
+figure;
+histogram(fanoFactors);
+xlabel('Fano Factor (var/mean)');
+ylabel('Neuron Count');
+title('Neuronal Trial-to-Trial Variability');
+
+% --- BEHAVIORAL VARIABILITY ---
+var_behav_opt = nan(nStimVals, 1);
+var_behav_cb = nan(nStimVals, 1);
+
+for iStim = 1:nStimVals
+    stim = stimVals(iStim);
+    indTrial = stimSeq == stim;
+
+    % Calculate the variance of the decoder's estimate, which should = threshold (plot as vertical lines below)
+    var_behav_opt(iStim) = var(s_hat_opt(indTrial));
+    var_behav_cb(iStim) = var(s_hat_cb(indTrial));
+end
+
+figure('Position', [100, 100, 1200, 400])
+subplot(1,2,1), hold on;
+histogram(var_behav_opt, 'FaceColor', 'b', 'FaceAlpha', 0.5);
+xline(beta_opt(2)^2, 'k-', 'LineWidth', 2);
+xlabel('Behavioral Variance');
+ylabel('Count');
+title('Behavioral Variance (Optimal)');
+legend({'Variance of s_{hat}', 'Threshold theta'});
+
+subplot(1,2,2), hold on;
+histogram(var_behav_cb, 'FaceColor', 'r', 'FaceAlpha', 0.5);
+xline(beta_cb(2)^2, 'k-', 'LineWidth', 2);
+xlabel('Behavioral Variance');
+ylabel('Count');
+title('Behavioral Variance (Correlation-Blind)');
+legend({'Variance of s_{hat}', 'Threshold theta'});
