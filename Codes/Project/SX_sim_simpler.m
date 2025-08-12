@@ -59,7 +59,7 @@ stimSeq = stimSeq(randperm(length(stimSeq)));
 fxn_tuning = @(s, s_pref) b + a * exp(kappa * (cos(s - s_pref) - 1)); % mean rates
 fxn_tuning_dev = @(s, s_pref)  - a * exp(kappa * (cos(s - s_pref) - 1)) * kappa .* sin(s - s_pref); % derivative of the tuning fxn
 
-% visualize tuning function (top) and derivative (bottom) of the first 10 neurons
+% [Visualize] tuning function (top) and derivative (bottom) of the first 10 neurons
 indNeuron = linspace(1,nNeurons,10);
 colors = rand(length(indNeuron), 3);
 figure('Position', [100, 100, 800, 800]);
@@ -102,7 +102,7 @@ for i = 1:nNeurons
     end
 end
 
-% Compute the eigenvalues of  signal correlation matrix
+% Compute the eigenvalues of signal correlation matrix
 eigenvalues = eig(Corr_signal);
 figure
 e = sort(eigenvalues, 'descend');
@@ -117,7 +117,6 @@ R_bar = (1-c0)*eye(nNeurons) + c0*Corr_signal;
 
 figure('Position', [100, 100, 800, 300]);
 subplot(1,2,1)
-% imagesc(Corr_signal); colorbar; axis square; clim([-1, 1]);
 imagesc(s_pref_allNeurons, s_pref_allNeurons, Corr_signal);
 colorbar; axis square; clim([-1, 1]);
 xlabel('Neuron''s preferred stimulus (rad)');
@@ -161,16 +160,16 @@ for t = 1:nTrials
             f_s_j = fxn_tuning(stimVal, s_pref_allNeurons(j)); % mean firing rates
 
             % based on the poisson-like scaling assumption
-            % but this is just one possibility; should try other forms of tuning curves/
-            % or just R_bar by itself, or just scaled oh no, I see then.
-            SIGMA_bar_perTrial(i, j) = sqrt(f_s_i*f_s_j)*R_bar(i, j);
+            SIGMA_bar_perTrial(i, j) = R_bar(i, j);
+            % can try scaling down R_bar
 
         end
     end
 
     % Sample covariate matrix from the Wishart distribution
     % just for adding randomness
-    SIGMA_perTrial = wishrnd(SIGMA_bar_perTrial, df) / df;
+    % SIGMA_perTrial = wishrnd(SIGMA_bar_perTrial, df) / df;
+    SIGMA_perTrial = SIGMA_bar_perTrial;
 
     % Sample neural responses from a multivariate normal distribution with defined mean and covariance
     respNeural(:,t) = mvnrnd(f_s, SIGMA_perTrial)';    % draw one population vector
@@ -197,15 +196,20 @@ plot(sort(stimSeq))
 
 fprintf('DONE ***.\n');
 
+close all
+
+
 %% 3b. Create the true covariance matrix (SIGMA_bar)
 f_s0 = fxn_tuning(stim_ref, s_pref_allNeurons); % Mean firing rates at s=0
 
-SIGMA_theo = nan(nNeurons, nNeurons);
-for i = 1:nNeurons
-    for j = 1:nNeurons
-        SIGMA_theo(i, j) = sqrt(f_s0(i) * f_s0(j)) * R_bar(i, j);
-    end
-end
+% SIGMA_theo = nan(nNeurons, nNeurons);
+% for i = 1:nNeurons
+%     for j = 1:nNeurons
+%         SIGMA_theo(i, j) = sqrt(f_s0(i) * f_s0(j)) * R_bar(i, j);
+%     end
+% end
+
+SIGMA_theo = R_bar;
 
 fprintf('*** Created true covariance matrix ***\n');
 
@@ -232,6 +236,11 @@ title('Theoretical Covariance Matrix');
 f_s_dev = fxn_tuning_dev(stim_ref, s_pref_allNeurons);  % nNeurons x 1
 w_opt_emp_unnorm = SIGMA_emp \ f_s_dev; % nNeurons x 1; more accurate than w_opt = inv(SIGMA_emp) * f_s_dev;
 w_opt_theo_unnorm = SIGMA_theo \ f_s_dev; % nNeurons x 1; more accurate than w_opt = inv(SIGMA_theo) * f_s_dev;
+
+% w_opt_theo_unnorm2 = inv(SIGMA_theo) * f_s_dev;
+
+% figure
+% plot(w_opt_theo_unnorm2, w_opt_theo_unnorm, 'o' )
 
 % Normalize decoder weights to obtain unbiased decoder
 % w_opt_theo = w_opt_theo_unnorm / (w_opt_theo_unnorm' * f_s_dev);
@@ -280,8 +289,26 @@ saveas(gcf, sprintf('Figures/DecoderWeights.jpg'));
 
 %% 5. Apply decoders and generate behavior
 % Derive estimators (s_hat)
-s_hat_opt = w_opt_emp' * respNeural;
-s_hat_cb  = w_cb_emp'  * respNeural;
+% Only choose the trials with stim close to the reference
+indTrial_selected = stimSeq >= -0.1 & stimSeq <= 0.1; % close to the reference
+nTrials_selected = sum(indTrial_selected);
+s_hat_opt_full = w_opt_emp' * respNeural;
+s_hat_cb_full  = w_cb_emp'  * respNeural;
+
+s_hat_opt = w_opt_emp' * respNeural(:, indTrial_selected);
+s_hat_cb  = w_cb_emp'  * respNeural(:, indTrial_selected);
+
+% Plot input vs output
+figure; hold on;
+plot(stimSeq(indTrial_selected), s_hat_opt, 'o', 'DisplayName', 'Optimal decoder');
+errorbar(unique(stimSeq(indTrial_selected)), mean(s_hat_opt), std(s_hat_opt), 'capsize', 10, 'LineWidth', 2);
+% plot(stimSeq(indTrial_selected), s_hat_cb, 'o', 'DisplayName', 'Correlation-blind decoder');
+xlabel('Input (stimulus)');
+ylabel('Output (estimator)');
+legend('show', 'Location', 'best');
+title('Input vs Output');
+set(findall(gcf,'-property','LineWidth'),'LineWidth',2);
+set(findall(gcf,'-property','fontsize'),'fontsize', 15);
 
 % Derive choices (1 for right, -1 for left)
 choice_opt = sign(s_hat_opt);
@@ -291,23 +318,26 @@ choice_cb  = sign(s_hat_cb);
 % Initialize vectors to store choice correlations
 % The decoder used to generate estimator matches the decoder to calculate CC
 CC_opt_emp_opt = nan(nNeurons, nStimVals);
+CC_opt_emp_opt = nan(nNeurons, 1);
 CC_cb_emp_cb = CC_opt_emp_opt;
 % The decoder used to generate estimator does NOT match the decoder to calculate CC
 CC_opt_emp_cb = CC_opt_emp_opt;
 CC_cb_emp_opt = CC_opt_emp_opt;
 
 % Calculate choice correlation for each neuron
+iStim_selected = nStimVals/2;
 for iN = 1:nNeurons
-    for iStim = 1:nStimVals
+    for iStim = iStim_selected
         indTrial = stimSeq == stimVals(iStim);
+        % indTrial_selected = indTrial & indTrial_selected;
 
         % Correlation for the optimal decoder
-        CC_opt_emp_opt(iN, iStim) = corr(respNeural(iN, indTrial)', s_hat_opt(indTrial)');
-        CC_opt_emp_cb(iN, iStim) = corr(respNeural(iN, indTrial)', s_hat_cb(indTrial)');
+        CC_opt_emp_opt(iN) = corr(respNeural(iN, indTrial)', s_hat_opt_full(indTrial)');
+        CC_opt_emp_cb(iN) = corr(respNeural(iN, indTrial)', s_hat_cb_full(indTrial)');
 
         % Correlation for the correlation-blind decoder
-        CC_cb_emp_cb(iN, iStim) = corr(respNeural(iN, indTrial)', s_hat_cb(indTrial)');
-        CC_cb_emp_opt(iN, iStim) = corr(respNeural(iN, indTrial)', s_hat_opt(indTrial)');
+        CC_cb_emp_cb(iN) = corr(respNeural(iN, indTrial)', s_hat_cb_full(indTrial)');
+        CC_cb_emp_opt(iN) = corr(respNeural(iN, indTrial)', s_hat_opt_full(indTrial)');
     end
 end
 
@@ -319,14 +349,16 @@ CC_cb_theo = sqrt(c0)* abs(sin(s_pref_allNeurons));
 
 % Optimal CC (Eq 3)
 theta_population = std(s_hat_opt); % a scalar; s_hat_opt is 1xnTrials
-theta_perNeuron = std(respNeural, [], 2)./f_s_dev; % expression is in p3
-CC_opt_theo = theta_population./theta_perNeuron;
+% theta_perNeuron = nan(nNeurons, 1);
+iStim = nStimVals/2;
+theta_perNeuron = std(respNeural(:, stimSeq == stimVals(iStim)), [], 2)./f_s_dev; % expression is in p3; nNeurons x 1
 
+CC_opt_theo = theta_population./theta_perNeuron;
 
 %% [Fig 2A] Plot CC (with both matched and mismatched decoder) as a fxn of theta_k and s_pref
 figure('Position', [100, 100, 1200, 1200]);
 subplot(2, 2, 1), hold on
-plot(theta_perNeuron, mean(CC_opt_emp_opt, 2), 'o', 'DisplayName', 'Optimal decoder (empirical and matched)');
+plot(theta_perNeuron, CC_opt_emp_opt, 'o', 'DisplayName', 'Optimal decoder (empirical and matched)');
 plot(theta_perNeuron, CC_opt_theo, 'k-', 'DisplayName', 'Optimal decoder (theoretical)');
 xlim([-3, 3])
 ylim([-.3, .3])
