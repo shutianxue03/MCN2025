@@ -27,15 +27,15 @@ flag_uncorrelated = 1;
 flag_measure_threshold = 1;
 % If 1, fixes the stimulus to the reference direction (s=0) for all trials. This "measurement isolation" mode is necessary to accurately measure the psychometric threshold (theta) by removing stimulus variability.
 
-nNeurons = 100;           % population size
-nTrialsPerStim = 1;
+nNeurons = 100;  % Number of neurons
+nTrialsPerStim = 1; % Number of trials per stimulus
 
 % From Pitkow et al 2015
 % stimVals = [-6.4, -2.6, -1, 0, 1, 2.6, 6.4]/180*pi;
 % nStimVals = length(stimVals);
 
 % Manually set the stimulus values
-nStimVals = 1000; % number of stimulus levels
+nStimVals = 10000; % number of stimulus levels
 if flag_measure_threshold
     stimVals = zeros(1, nStimVals); % for testing, all zeros
 else
@@ -58,8 +58,8 @@ kappa = 1.5; % tuning width for von Mises; bigger kappa, narrower curve
 b = 0;
 a = 20;
 
-% Print parameters in one sentence
-fprintf('==================\nParameters\n   %d neurons\n   %d trials per stim levels, %d stim levels\n   c0=%.2f, kappa=%.2f, b=%.2f, a=%.2f\n==================\n', nNeurons, nTrialsPerStim, nStimVals, c0, kappa, b, a);
+% Print flags and parameters in one sentence
+fprintf('==================\nCorrelated noise (1=NO, 0=YES): %d\nStimulus are all at ref (1=Yes; 0=No): %d\nParameters\n   %d neurons\n   %d trials per stim levels, %d stim levels\n   c0=%.2f, kappa=%.2f, b=%.2f, a=%.2f\n==================\n', flag_uncorrelated, flag_measure_threshold, nNeurons, nTrialsPerStim, nStimVals, c0, kappa, b, a);
 rng(1); % reproducibility
 
 % Set stimulus sequence
