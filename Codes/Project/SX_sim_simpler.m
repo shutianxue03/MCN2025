@@ -21,11 +21,12 @@ clear all; clc; close all
 
 %% Parameters (adjust to match Pitkow et al. 2015)
 
-flag_uncorrelated = 1;
-% If 1, set Corr_signal to identity matrix. This removes all noise correlations, providing a "sanity check" where the correlation-blind decoder's performance should equal the optimal decoder's performance.
+flag_uncorrelated = 0;
+% If 1, set Corr_signal to identity matrix. 
+% This removes all noise correlations, providing a "sanity check" where the correlation-blind decoder's performance should equal the optimal decoder's performance.
 
-flag_measure_threshold = 1;
-% If 1, fixes the stimulus to the reference direction (s=0) for all trials. This "measurement isolation" mode is necessary to accurately measure the psychometric threshold (theta) by removing stimulus variability.
+flag_measure_threshold = 0;
+% If 1, fixes the stimulus to the reference direction (s=0) for all trials. 
 
 nNeurons = 100;  % Number of neurons
 nTrialsPerStim = 1; % Number of trials per stimulus
@@ -35,11 +36,11 @@ nTrialsPerStim = 1; % Number of trials per stimulus
 % nStimVals = length(stimVals);
 
 % Manually set the stimulus values
-nStimVals = 10000; % number of stimulus levels
+nStimVals = 1000; % number of stimulus levels
 if flag_measure_threshold
     stimVals = zeros(1, nStimVals); % for testing, all zeros
 else
-    stimVals = linspace(-pi/2, pi/2, nStimVals);
+    stimVals = linspace(-.1, .1, nStimVals);
     % stimVals = rand(1, nStimVals)*2-1;
 end
 stim_ref = 0; % the reference stimulus, which is the front direction
@@ -192,6 +193,7 @@ title('Theoretical Noise Correlation Matrix');
 
 fprintf('*** Derived Noise Correlation Matrix (R_bar) ***\n');
 
+close all
 %% 3. Simulate neural responses (Eq. 1 in main text)
 fprintf('*** Simulating neural responses...     ');
 
@@ -403,23 +405,23 @@ figure('Position', [100, 100, 1200, 400]);
 subplot(1,2,1), hold on;
 plot(stimSeq, s_hat_opt_full, 'o', 'DisplayName', 'Optimal decoder');
 plot(stimSeq, s_hat_cb_full, 'o', 'DisplayName', 'CB decoder');
-plot([-.1, .1], [-.1, .1], 'k--');
+% plot([-.1, .1], [-.1, .1], 'k--', 'HandleVisibility','off');
 xlabel('Input (stimulus)');
 ylabel('Output (estimator)');
-xlim([-.1, .1]);
-ylim([-.1, .1]);
+% xlim([-.1, .1]);
+% ylim([-.1, .1]);
 legend('show', 'Location', 'best');
-axis square
+axis square 
 title('All trials')
 
 subplot(1,2,2), hold on;
 plot(stimSeq(indTrial_selected), s_hat_opt, 'o', 'DisplayName', 'Optimal decoder');
 plot(stimSeq(indTrial_selected), s_hat_cb, 'o', 'DisplayName', 'Optimal decoder');
-plot([-.1, .1], [-.1, .1], 'k--');
+% plot([-.1, .1], [-.1, .1], 'k--', 'HandleVisibility','off');
 xlabel('Input (stimulus)');
 ylabel('Output (estimator)');
-xlim([-.1, .1]);
-ylim([-.1, .1]);
+% xlim([-.1, .1]);
+% ylim([-.1, .1]);
 legend('show', 'Location', 'best');
 axis square
 title('Selected trials')
