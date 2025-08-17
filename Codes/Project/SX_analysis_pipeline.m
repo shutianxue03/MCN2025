@@ -24,17 +24,21 @@ str_region = 'CP';
 str_priorCond = 'bias0.5';
 str_QC = 'QCFalse';
 flag_selectPosCC = 0;
-indC_CC = 1; % Use CC of the lower contrast
-indC_Dis = 5; % Use discriminability of the higher contrast
 
 %% Load data
 filename = sprintf('data_%s_%s_%s.mat', str_region, str_priorCond, str_QC);
+indC_CC = 1; % Use CC of the lower contrast
+indC_Dis = 5; % Use discriminability of the higher contrast
+
+filename = 'data_sim.mat';
+indC_CC = 1; % Use CC of the lower contrast
+indC_Dis = 2; % Use discriminability of the higher contrast
+
 load(filename)
 
 %% Extract key parameters
 [nNeurons, ~] = size(respNeural{1})
-str_contrast_all = {'C0', 'C0625', 'C125', 'C25', 'C100'};
-contrast_all = [0, .0625, .125, .25, 1];
+
 nC = length(contrast_all);
 
 contrasts_allC = [];
@@ -53,33 +57,33 @@ for iC = 1:nC
     figure('Position', [100, 100, 2e3, 2e3])
 
     % Plot raster
-    figure
-    % subplot(1,3,1), hold on;
+    % figure
+    subplot(1,3,1), hold on;
     imagesc(respNeural_perC);
     colorbar;
     xlabel('Trial #');
     ylabel('Neuron #');
     title('Spike count');
 
-    % % Covariance
-    % cov_perC = cov(respNeural_perC');
-    % subplot(1,3,2), hold on;
-    % imagesc(cov_perC);
-    % colorbar; axis square
-    % xlabel('Neuron #');
-    % ylabel('Neuron #');
-    % title('Neural Response Covariance');
+    % Covariance
+    cov_perC = cov(respNeural_perC');
+    subplot(1,3,2), hold on;
+    imagesc(cov_perC);
+    colorbar; axis square
+    xlabel('Neuron #');
+    ylabel('Neuron #');
+    title('Neural Response Covariance');
 
-    % % Conduct PCA and plot eigenvalues
-    % eigenvalues = eig(cov_perC);
-    % eigenvalues_s = sort(eigenvalues/sum(eigenvalues), 'descend');
-    % subplot(1,3,3), hold on;
-    % stem(eigenvalues_s(1:10));
-    % xlabel('Principal Component');
-    % ylabel('Variance Explained');
-    % title('PCA Variance Explained');
+    % Conduct PCA and plot eigenvalues
+    eigenvalues = eig(cov_perC);
+    eigenvalues_s = sort(eigenvalues/sum(eigenvalues), 'descend');
+    subplot(1,3,3), hold on;
+    stem(eigenvalues_s(1:10));
+    xlabel('Principal Component');
+    ylabel('Variance Explained');
+    title('PCA Variance Explained');
 
-    % sgtitle(sprintf('Neural Data Analysis (Region=%s | Contrast=%.2f | %d Trials | Prior cond = %s)', str_region, contrast, nTrials_perC, str_priorCond));
+    sgtitle(sprintf('Neural Data Analysis (Region=%s | Contrast=%.2f | %d Trials | Prior cond = %s)', str_region, contrast, nTrials_perC, str_priorCond));
 end
 
 %% Derive tuning function
@@ -134,24 +138,27 @@ for iBoot = 1:nBoot
         respBehav_perC = double(respBehav{iC});
         choice_perC = respBehav_perC(2, indTrial{iC});
         stim_perC = respBehav_perC(3, indTrial{iC});
-        indTrial_L = stim_perC == 1;
-        indTrial_R = stim_perC == -1;
+        indTrial_L = stim_perC == -1;
+        indTrial_R = stim_perC == 1;
 
         fprime(:, iC) = (mean(respNeural_perC(:, stim_perC == 1), 2) - mean(respNeural_perC(:, stim_perC == -1), 2));
     end
 
     if iBoot<=5
-        figure, hold on
+        figure('Position',[100 100 600 400]);
+        hold on; box on;
         x_contrast = [-1.5, log10(contrast_all(2:end))]; % because log10(0) is inf
         plot(x_contrast, fprime, '-');
         errorbar(x_contrast, mean(fprime), std(fprime)/sqrt(nNeurons), 'k-', 'LineWidth', 2);
         xticks(x_contrast)
         xticklabels(string(contrast_all))
         xlabel('Contrast')
-        ylabel('f'' (Spike count difference)')
+        ylabel('$\Delta f$ (Spike count difference)', 'Interpreter', 'latex');
+        set(gca, 'FontSize', 20)  % Sets font size for axis tick labels
         xlim([-1.8, .3])
-        % ylim([-1, 1])
+        ylim([-.2, 1])
     end
+    
     % collapse across contrast
     choice_allC = [];
     stim_allC = [];
