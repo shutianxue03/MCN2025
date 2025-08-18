@@ -2,165 +2,176 @@
 clear all; clc; rng(0); format compact
 
 % --------------------
-% DESIGN
+% DESIGN (scalars)
 % --------------------
-nNeurons = 50; % neurons
-nTrials = 1000; % trials per contrast
-contrast_all = [0, 1]; % contrasts
-nC = numel(contrast_all);
-indC_CC = 1; indC_Dis = nC;
+nNeurons      = 50;          % [scalar] number of neurons (N)
+nTrials       = 1000;        % [scalar] trials per contrast (T)
+contrast_all  = [0, 1];      % [1 x nC] list of contrasts
+nC            = numel(contrast_all);  % [scalar] number of contrasts
+indC_CC       = 1;           % [scalar] index of contrast used for CC (low)
+indC_Dis      = nC;          % [scalar] index of contrast used for d' (high)
 
-df_max = [.01, 2.5];
-df_min = [-.01, 0.3];
+% For creating a diverging Δf pattern at each contrast
+df_min = [-.01, -0.3];        % [1 x nC] min Δf for each contrast
+df_max = [.01, 2.5];         % [1 x nC] max Δf for each contrast
 
-% Sample stimulus (binary around s0): s in {-1, +1}, -1=Left, 1=right
-stim_all = sign(randn(nTrials,1)); % balanced on average
 
-% neuron “tuning strengths” (Δf) at unit contrast; create a diverging pattern
-% base_df = linspace(.001, 2.5, nNeurons)'; % some neurons near 0, others larger
-% Hetergeneous noise
-sigma0 = 1.0 + 0.3*randn(nNeurons,1); % baseline noise SD per neuron
-% Homogeneous noise
-sigma0 = ones(nNeurons,1); % baseline noise SD per neuron
+% --------------------
+% STIMULUS (binary)
+% --------------------
+% stim_all: [T x 1] binary stimulus per trial (s ∈ {-1,+1}; -1=Left, +1=Right)
+stim_all = sign(randn(nTrials,1));  % ~balanced
 
-% Optional: some untuned neurons
-% untuned_frac = 0.25;
-% isUntuned = false(nNeurons,1);
-% isUntuned(randperm(nNeurons, round(untuned_frac*nNeurons))) = true;
-% base_df(isUntuned) = 0;
+% --------------------
+% NOISE SCALE (diagonal Σ)
+% --------------------
+% sigma0: [N x 1] baseline noise SD per neuron (diagonal of Σ)
+% Choose ONE of the following:
+% Heterogeneous noise:
+% sigma0 = 1.0 + 0.3*randn(nNeurons,1); sigma0 = max(sigma0, 0.3);
+% Homogeneous noise (matches your Option B derivation; Σ = σ^2 I):
+sigma0 = ones(nNeurons,1);
 
-% Theoretical df
+% --------------------
+% THEORETICAL Δf PER CONTRAST
+% --------------------
+% df_theo_allC: [N x nC] Δf_k(c) for each neuron k and contrast c
 df_theo_allC = nan(nNeurons, nC);
 for iContrast = 1:nC
-    df_theo_allC(:, iContrast) = linspace(df_min(iContrast), df_max(iContrast), nNeurons);
+    df_theo_allC(:, iContrast) = linspace(df_min(iContrast), df_max(iContrast), nNeurons).';
 end
 
-%% LOOP OVER CONTRASTS: simulate population responses & behavior
-% Preallocate
-% CP_low = nan(nNeurons,1); % CP at low contrast (we'll use contr(2))
-CC_lowC_allN = nan(nNeurons,1); % CC at low contrast (Pearson)
-CC_lowC_allN_allC = nan(nNeurons, nC); % store CC at low contrast for all contrasts
-Dis_highC_allN = nan(nNeurons,1); % discriminability at high contrast
-Dis_highC_allN_allC = nan(nNeurons, nC); % discriminability at high contrast for all contrasts
-w_allC = nan(nNeurons,nC); % decoder weights per contrast (just for inspection)
-% df_theo_allC = nan(nNeurons, nC);
-theta_allC = nan(nC, 1); % behav threshold
-CC_theo_allC = nan(nNeurons, nC); % theoretical choice correlation
-respNeural = cell(nC, 1);
-respBehav = cell(nC, 1);
+%% --------------------
+% PREALLOCATION (shapes)
+% --------------------
+CC_lowC_allN_allC   = nan(nNeurons, nC);
+Dis_highC_allN_allC = nan(nNeurons, nC);
+w_allC              = nan(nNeurons,nC);
+theta_allC          = nan(nC, 1);
+CC_theo_allC        = nan(nNeurons, nC);
+theta_allN          = nan(nNeurons, nC);
+respNeural          = cell(nC, 1);
+respBehav           = cell(nC, 1);
 
+%% --------------------
+% LOOP OVER CONTRASTS
+% --------------------
 for iContrast = 1:nC
     % Contrast
-    contrast = contrast_all(iContrast);
+    contrast = contrast_all(iContrast);   % [scalar]
 
-    % Define the df at this contrast
-    df = df_theo_allC(:, iContrast);
+    % Δf at this contrast
+    df = df_theo_allC(:, iContrast);      % [N x 1]
+    df_norm2 = df' * df;                  % [scalar] ||df||^2
+    if df_norm2 == 0
+        warning('Contrast idx %d (%.3f): ||df||=0 → no signal.', iContrast, contrast);
+    end
 
+    % Diagonal noise SD vector (Σ = diag(sigma0.^2))
+    SIGMA = sigma0;                        % [N x 1] SDs
 
-    % Define the covariance matrix
-    SIGMA = sigma0; % keep noise independent of contrast
-
-    % Construct unbiased optimal decoder for diagonal Σ:
-    % w ∝ f', with normalization so that w^T f' = 1 (i.e., <s_hat|s> = s)
-    % If Σ = diag(sig.^2), the full MLE would be w ∝ Σ^{-1} f' = f'./sig.^2,
-    % but your note assumes Σ diagonal + use w = f'/||f'||^2 to satisfy w^T f' = 1.
-    % if norm(df) > 0
-    w = df / (df' * df); % unbiased normalization
-    % else % if norm(df)==0, which is the case when contrast=0
-    %     fprintf('norm(df)==0\n')
-    %     w = zeros(nNeurons,1);
-    % end
+    % --------------------
+    % Unbiased decoder: w = df / (df' * df)
+    % Ensures w'^T df = 1 ⇒ E[s_hat|s]=s when Σ ∝ I
+    % --------------------
+    w = df / max(df_norm2, eps);          % [N x 1]
     w_allC(:, iContrast) = w;
 
-    % Generate responses for T trials:
-    % r = f' * s + noise, with noise ~ N(0, diag(sig.^2))
-    noise = (SIGMA .* randn(nNeurons,nTrials)); % independent across neurons
-    r = df * stim_all' + noise; % [N x T]
+    % --------------------
+    % Simulate population responses
+    % r = df * s' + noise, noise ~ N(0, diag(SIGMA.^2))
+    % --------------------
+    noise = (SIGMA .* randn(nNeurons, nTrials));  % [N x T]
+    r     = df * stim_all' + noise;               % [N x T]
 
-    % Behavioral estimate and choice:
-    % s_hat = w' * r; % [1 x T]
-    % choice = sign(s_hat)'; % {-1,+1}; ties rare
-    if norm(df) > 0
-        s_hat = w' * r;
-        r_res      = r - df * stim_all';         % subtract class means: ε = r - f's
-        s_hat_res  = s_hat - stim_all';          % noise in decision variable: w^T ε
-        choice = sign(s_hat)';
-    else
-        s_hat = zeros(1,nTrials);           % no signal
-        choice = randi([0 1], nTrials, 1)*2 - 1;  % random {-1,+1}
-    end
+    % Decision variable and choice
+    s_hat     = w' * r;                           % [1 x T]
+    choice    = sign(s_hat)';                     % [T x 1] in {-1,+1}
+    
+    % Residuals (remove signal) – critical for Eq.10 consistency
+    r_res     = r - df * stim_all';               % [N x T] ε = r - df*s
+    s_hat_res = s_hat - stim_all';                % [1 x T] w^Tε
 
-    % Obtain behavioral threshold
-    theta = std(s_hat);
+    % Behavioral threshold (empirical SD of estimator)
+    theta = std(s_hat, 0, 2);                     % [scalar]
     theta_allC(iContrast) = theta;
 
-    % Calculate and print pHit and pFA
-    pHit = mean(choice(stim_all==1) == 1);
-    pFA = mean(choice(stim_all==-1) == 1);
-    fprintf('Contrast %.1f: pHit = %.2f, pFA = %.2f\n', contrast, pHit, pFA);
+    % Sanity readout
+    pHit = mean(choice(stim_all== 1) == 1);       % [scalar]
+    pFA  = mean(choice(stim_all==-1) == 1);       % [scalar]
+    fprintf('Contrast %.1f: pHit = %.2f, pFA = %.2f, w^T df = %.3f\n', ...
+            contrast, pHit, pFA, w' * df);
 
-    % Store neural * behav response
+    % Store simulated data (match your Python-like format)
+    % respNeural{iC}: [N x T], respBehav{iC}: [3 x T]
     respNeural{iContrast} = r;
-    respBehav{iContrast} = [ones(1, nTrials)*contrast; choice'; stim_all']; % row1: contrast per trial, row2: choice per trial; row3: stim per trial
+    respBehav{iContrast}  = [ones(1, nTrials)*contrast; choice'; stim_all']; 
 
-    %  Compute CC and discriminability
+    % --------------------
+    % Empirical CC (noise-only): corr(ε_k, w^Tε)
+    % --------------------
     for iN = 1:nNeurons
-
-        CC_lowC_allN_allC(iN, iContrast) = corr(r_res(iN,:)', s_hat_res', 'type','Pearson','rows','complete');
+        CC_lowC_allN_allC(iN, iContrast) = corr( r_res(iN,:)', s_hat_res', ...
+            'type','Pearson', 'rows','complete');
     end
 
-    % d'_k = |Δf_k| / σ_k since s ∈ {-1,+1} ⇒ Δf = 2 f'
-    % For binary s with equal prob, a common single-neuron d' is |f'|/σ (up to a 2 factor).
-    % Dis_highC_allN_allC(:, iContrast) = abs(df) ./ SIGMA;
-    Dis_highC_allN_allC(:, iContrast) = abs(df) ./ max(SIGMA, eps);  % avoid div-by-zero
+    % --------------------
+    % Per-neuron discriminability and neural threshold
+    % d'_k = |Δf_k| / σ_k ;  θ_k = σ_k / |Δf_k|
+    % --------------------
+    Dis_highC_allN_allC(:, iContrast) = abs(df) ./ max(SIGMA, eps);  % [N x 1]
+    theta_allN(:, iContrast)          = SIGMA ./ max(abs(df), eps);  % [N x 1]
 
-    % Behavioral threshold
-    theta_allN(:, iContrast) = SIGMA ./ max(abs(df), eps);
+    % --------------------
+    % Theoretical CC (Option B, Σ ∝ I): C_k = f'_k / ||f'||
+    % --------------------
+    CC_theo_allC(:, iContrast) = df / max(norm(df), eps);            % [N x 1]
+end
 
-    CC_theo_allC(:, iContrast) = df / norm(df);
+% Convenience aliases for plotting the “expected relationship”
+CC_lowC_allN   = CC_lowC_allN_allC(:, indC_CC);       % [N x 1]
+Dis_highC_allN = Dis_highC_allN_allC(:, indC_Dis);    % [N x 1]
 
-end % end of iContrast
-
-%% Save the synthetic data
+%% --------------------
+% SAVE (cells + meta)
+% --------------------
 save('data_sim.mat', 'respNeural', 'respBehav', 'contrast_all');
 
-%% Compare theo CC and emp CC
-figure, hold on
-for iC=1:nC
-    CC_theo = CC_theo_allC(:, iC);
-    CC_emp = CC_lowC_allN_allC(:, iC);
+%% --------------------
+% THEO vs EMP CC SCATTER (per contrast)
+% --------------------
+figure; hold on; box on
+for iC = 1:nC
+    CC_theo = CC_theo_allC(:, iC);               % [N x 1]
+    CC_emp  = CC_lowC_allN_allC(:, iC);          % [N x 1]
     plot(CC_theo, CC_emp, 'o', 'DisplayName', sprintf('Contrast %.1f', contrast_all(iC)));
 end
-xlim([-1,1])
-ylim([-1,1])
-plot([-1,1], [-1,1], 'k--')
-xline(0, 'k-')
-yline(0, 'k-')
+plot([-1,1], [-1,1], 'k--', 'HandleVisibility','off');
+xline(0,'k-', 'HandleVisibility','off'); 
+yline(0,'k-', 'HandleVisibility','off');
+xlim([-1,1]); ylim([-1,1]); axis square
+xlabel('Theoretical CC'); ylabel('Empirical CC (residualized)');
 legend('show', 'Location', 'best')
-xlabel('Theoretical CC')
-ylabel('Empirical CC')
 
-%% Plot fprime
-figure('Position',[100 100 600 400]);
-hold on; box on;
-x_contrast = [-1.5, log10(contrast_all(2:end))]; % because log10(0) is inf
+%% --------------------
+% PLOT Δf vs contrast (fan-out)
+% --------------------
+figure('Position',[100 100 600 400]); hold on; box on;
+x_contrast = [-1.5, log10(contrast_all(2:end))]; % log axis anchor for 0
 for iN = 1:nNeurons
     plot(x_contrast, df_theo_allC(iN, :), '-o');
 end
-errorbar(x_contrast, mean(df_theo_allC, 1), std(df_theo_allC, [], 1)/sqrt(nNeurons), 'k-', 'LineWidth', 2);
-xticks(x_contrast)
-xticklabels(string(contrast_all))
-xlabel('Contrast')
-ylabel('$\Delta f$ (Spike count difference)', 'Interpreter', 'latex');
-xlim([-1.8, .3])
-% ylim([-1, 1])
-set(gca, 'FontSize', 20)  % Sets font size for axis tick labels
+errorbar(x_contrast, mean(df_theo_allC, 1), std(df_theo_allC, [], 1)/sqrt(nNeurons), ...
+         'k-', 'LineWidth', 2);
+xticks(x_contrast); xticklabels(string(contrast_all));
+xlabel('Contrast'); ylabel('\Delta f (Spike count difference)');
+xlim([-1.8, .3]); set(gca, 'FontSize', 14);
 
-%% PLOTS / EXPECTED RELATIONSHIP
-figure('Position',[100 100 1100 420]);
-hold on
-plot(Dis_highC_allN_allC(:, indC_Dis), CC_lowC_allN_allC(:, indC_CC), 'o');
-axis square
-legend('show', 'Location', 'best')
-xlabel('Discriminability d'' (high contrast)'); ylabel('CC (low contrast)');
-title('Expected: higher d'' → stronger CC');
+%% --------------------
+% EXPECTED RELATIONSHIP: d'(high C) vs CC(low C)
+% --------------------
+figure('Position',[100 100 600 550]); hold on; box on; axis square
+plot(Dis_highC_allN, CC_lowC_allN, 'o');
+xlabel('Discriminability d'' (high contrast)');
+ylabel('Choice correlation (low contrast)');
+title('Expected: higher d'' \rightarrow stronger CC');
